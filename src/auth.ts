@@ -1,4 +1,4 @@
-import { importPKCS8, SignJWT } from "jose";
+import { importPKCS8, SignJWT, type JWTPayload } from "jose";
 import type { Auth } from "./types.js";
 
 export interface ServiceAccountAuthConfig {
@@ -6,39 +6,46 @@ export interface ServiceAccountAuthConfig {
     privateKey: string;
     /** The service account email */
     clientEmail: string;
+    /** Optional. OAuth 2.0 scopes to request. Defaults to Firestore datastore scope. */
+    scopes?: string[];
 }
 
 export async function createJWT(
     config: ServiceAccountAuthConfig,
+    scopes: string[] = [
+        "https://www.googleapis.com/auth/datastore",
+    ],
 ): Promise<string> {
     const now = Math.floor(Date.now() / 1000);
-    const payload = {
+    const payload: JWTPayload = {
         iss: config.clientEmail,
         sub: config.clientEmail,
         aud: "https://oauth2.googleapis.com/token",
         iat: now,
         exp: now + 3600,
-        scope: "https://www.googleapis.com/auth/datastore",
+        scope: scopes.join(" "),
     };
 
-    try {
-        const privateKey = await importPKCS8(config.privateKey, "RS256");
-
-        const token = await new SignJWT(payload)
-            .setProtectedHeader({
-                alg: "RS256",
-                typ: "JWT",
-            })
-            .sign(privateKey);
-
-        return token;
-    } catch (error) {
-        throw error;
-    }
+    const privateKey = await importPKCS8(config.privateKey, "RS256");
+    const token = await new SignJWT(payload)
+        .setProtectedHeader({
+            alg: "RS256",
+            typ: "JWT",
+        })
+        .sign(privateKey);
+    return token;
 }
 
 export async function getFirestoreToken(
     config: ServiceAccountAuthConfig,
+    scopes?: string[],
+): Promise<string> {
+    return getOAuthToken(config, scopes);
+}
+
+export async function getOAuthToken(
+    config: ServiceAccountAuthConfig,
+    scopes?: string[],
 ): Promise<string> {
     const response = await fetch("https://oauth2.googleapis.com/token", {
         method: "POST",
@@ -47,7 +54,7 @@ export async function getFirestoreToken(
         },
         body: JSON.stringify({
             grant_type: "urn:ietf:params:oauth:grant-type:jwt-bearer",
-            assertion: await createJWT(config),
+            assertion: await createJWT(config, scopes),
         }),
     });
 
@@ -55,24 +62,28 @@ export async function getFirestoreToken(
     if (typeof data.access_token !== "string") {
         throw new Error("Invalid access token");
     }
-
     return data.access_token;
 }
 
 export class ServiceAccountAuth implements Auth {
     private _token: string | null = null;
     private _tokenExpiry: number = 0;
+    private readonly _scopes?: string[];
 
-    constructor(private readonly _config: ServiceAccountAuthConfig) {}
+    constructor(
+        private readonly _config: ServiceAccountAuthConfig & {
+            scopes?: string[];
+        },
+    ) {
+        this._scopes = _config.scopes;
+    }
 
     async getToken(): Promise<string> {
         if (this._token && Date.now() < this._tokenExpiry - 60000) {
             return this._token;
         }
-
-        this._token = await getFirestoreToken(this._config);
+        this._token = await getOAuthToken(this._config, this._scopes);
         this._tokenExpiry = Date.now() + 3600 * 1000; // 1 hour
-
         return this._token;
     }
 }

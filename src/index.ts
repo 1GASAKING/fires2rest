@@ -9,6 +9,7 @@ export * from "./client.js";
 export * from "./query.js";
 export * from "./references.js";
 export * from "./transaction.js";
+export * from "./rtdb.js";
 
 // Value utilities
 export * from "./field-value.js";
@@ -19,3 +20,4 @@ export * from "./auth.js";
 
 // Types
 export * from "./types.js";
+
