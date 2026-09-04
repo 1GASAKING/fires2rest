@@ -38,6 +38,7 @@
     ],
     "scripts": {
         "test": "vitest",
+        "test:emulator": "set FIRESTORE_EMULATOR_HOST=127.0.0.1:8095&& firebase emulators:exec --project demo-no-project --only firestore \"vitest run\"",
         "build": "tsdown",
         "format": "prettier --write .",
         "docs": "typedoc",
